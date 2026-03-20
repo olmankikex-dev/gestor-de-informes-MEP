@@ -1,0 +1,125 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: registrations
+    // Document ID: Firebase Auth UID
+    // Fields:
+    //   - email: string (required, MEP format) - User's institutional email
+    //   - password: string (required, 1-100 chars) - User's password
+    //   - createdAt: string (required, ISO 8601) - Registration timestamp
+    //   - updatedAt: string (required, ISO 8601) - Last update timestamp
+    //   - status: string (required, 'active'|'disabled') - Account status
+    //
+    // Collection: reports
+    // Document ID: Unique report ID
+    // Fields:
+    //   - id: string (required) - Report unique identifier
+    //   - userId: string (required) - Owner's UID
+    //   - header: map (required) - Report metadata (student name, level, etc.)
+    //   - rows: list (required, max 100) - Support rows
+    //   - observaciones: string (optional) - General observations
+    //   - createdAt: number (required) - Creation timestamp in ms
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isAuthenticated() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && (request.auth.uid == userId || request.auth.token.email == userId);
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+             (request.auth.token.email == "olmankikex@gmail.com" && request.auth.token.email_verified == true);
+    }
+
+    function isValidEmail(email) {
+      return email is string && email.matches("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$");
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    function hasOnlyAllowedFields(data, allowedFields) {
+      return data.keys().hasOnly(allowedFields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidRegistration(data) {
+      return data.keys().hasAll(['email', 'password', 'createdAt', 'updatedAt', 'status']) &&
+             isValidEmail(data.email) &&
+             data.password is string && data.password.size() > 0 && data.password.size() <= 100 &&
+             isValidDateString(data.createdAt) &&
+             isValidDateString(data.updatedAt) &&
+             data.status is string && (data.status == 'active' || data.status == 'disabled') &&
+             hasOnlyAllowedFields(data, ['email', 'password', 'createdAt', 'updatedAt', 'status']);
+    }
+
+    function isValidReport(data, isUpdate) {
+      return data.keys().hasAll(['id', 'userId', 'header', 'rows', 'createdAt']) &&
+             data.id is string && data.id.size() > 0 && data.id.size() <= 100 &&
+             data.userId is string && data.userId == request.auth.uid &&
+             data.header is map && data.header.keys().size() <= 20 &&
+             data.rows is list && data.rows.size() <= 100 &&
+             (!('observaciones' in data) || (data.observaciones is string && data.observaciones.size() <= 5000)) &&
+             data.createdAt is number &&
+             hasOnlyAllowedFields(data, ['id', 'userId', 'header', 'rows', 'observaciones', 'createdAt']);
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /registrations/{userId} {
+      // Allow read if the user is authenticated and is the owner (by UID or email) or is admin
+      allow read: if isAuthenticated() && (request.auth.token.email == userId || request.auth.uid == userId || isAdmin());
+      
+      // Allow create if the user is authenticated and is creating their own record
+      allow create: if isAuthenticated() && isEmailVerified() && (request.auth.token.email == userId || request.auth.uid == userId) && isValidRegistration(request.resource.data);
+      
+      // Allow update if owner or admin
+      allow update: if isAuthenticated() && (request.auth.token.email == userId || request.auth.uid == userId || isAdmin()) && 
+                       isValidRegistration(request.resource.data) &&
+                       (isAdmin() || (
+                         request.resource.data.email == resource.data.email &&
+                         request.resource.data.createdAt == resource.data.createdAt
+                       ));
+      
+      allow delete: if isAdmin();
+    }
+
+    match /reports/{reportId} {
+      // Users can only read their own reports or admins can read all
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      
+      // Users can only create reports for themselves
+      allow create: if isAuthenticated() && isEmailVerified() && isValidReport(request.resource.data, false);
+      
+      // Users can only update their own reports
+      allow update: if isAuthenticated() && isEmailVerified() && resource.data.userId == request.auth.uid && 
+                       isValidReport(request.resource.data, true) &&
+                       request.resource.data.userId == resource.data.userId;
+      
+      // Users can only delete their own reports
+      allow delete: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+  }
+}
