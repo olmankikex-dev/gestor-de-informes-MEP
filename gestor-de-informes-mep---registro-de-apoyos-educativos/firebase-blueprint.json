@@ -1,0 +1,59 @@
+{
+  "entities": {
+    "registration": {
+      "title": "User Registration",
+      "description": "Stores user registration data including MEP email and established password.",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "MEP institutional email."
+        },
+        "password": {
+          "type": "string",
+          "description": "Password established by the user."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of registration."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Timestamp of last update."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["active", "disabled"],
+          "description": "Account status."
+        }
+      },
+      "required": ["email", "password", "createdAt", "updatedAt", "status"]
+    },
+    "report": {
+      "title": "Educational Support Report",
+      "description": "Educational support reports created by users.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "header": { "type": "object" },
+        "rows": { "type": "array" },
+        "observaciones": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["userId", "header", "rows", "createdAt"]
+    }
+  },
+  "firestore": {
+    "registrations": {
+      "schema": "registration",
+      "description": "Collection of all user registrations."
+    },
+    "reports": {
+      "schema": "report",
+      "description": "Collection of educational support reports."
+    }
+  }
+}
